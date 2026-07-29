@@ -1,0 +1,12 @@
+spring.application.name=demo-for-llm
+
+# Groq API Configuration
+# Get free API key from https://console.groq.com/keys
+# IMPORTANT: Set this as an environment variable LLM_API_KEY or create application-local.properties
+llm.api.key=${LLM_API_KEY:your-api-key-here}
+
+# Model options: llama-3.1-8b-instant, llama-3.3-70b-versatile, mixtral-8x7b-32768
+llm.model=${LLM_MODEL:llama-3.1-8b-instant}
+
+# Server Configuration (optional)
+# server.port=8080

@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  llm-token-optimizer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm-token-optimizer
+    ports:
+      - "8080:8080"
+    environment:
+      # Fast Tier Configuration (Required)
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+      
+      # Gemini Configuration (Optional)
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      
+      # Spring Configuration
+      - SPRING_PROFILES_ACTIVE=prod
+      - SERVER_PORT=8080
+      
+      # File Upload Configuration
+      - SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE=50MB
+      - SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE=50MB
+      
+      # Web Scraper Configuration
+      - WEB_SCRAPER_TIMEOUT=10000
+      - WEB_SCRAPER_USER_AGENT=Mozilla/5.0 (compatible; LLM-Gateway/1.0)
+      
+      # Actuator Configuration
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics
+      - MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS=when-authorized
+      
+      # Async Configuration
+      - SPRING_MVC_ASYNC_REQUEST_TIMEOUT=120000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      # Optional: Mount volume for logs or persistent data
+      - ./logs:/app/logs
+    networks:
+      - llm-network
+
+# Optional: Add a reverse proxy for production
+  nginx:
+    image: nginx:alpine
+    container_name: llm-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - llm-token-optimizer
+    restart: unless-stopped
+    networks:
+      - llm-network
+    profiles:
+      - production
+
+networks:
+  llm-network:
+    driver: bridge
+
+volumes:
+  logs:
+    driver: local

@@ -1,0 +1,144 @@
+########################################
+# General
+########################################
+
+HELP.md
+.DS_Store
+Thumbs.db
+ehthumbs.db
+*.bak
+*.backup
+*.swp
+*.swo
+*~
+*.pid
+*.seed
+*.pid.lock
+*.trace
+*.out
+*.prof
+*.hprof
+
+########################################
+# IntelliJ / Eclipse / VSCode
+########################################
+
+.idea/
+.vscode/
+*.code-workspace
+*.iml
+*.ipr
+*.iws
+out/
+
+.classpath
+.project
+.settings/
+.factorypath
+.springBeans
+.sts4-cache
+.apt_generated
+
+########################################
+# Backend (Spring Boot / Maven)
+########################################
+
+demo-for-llm/target/
+demo-for-llm/build/
+
+demo-for-llm/.mvn/wrapper/maven-wrapper.jar
+
+########################################
+# Frontend (React/Vite)
+########################################
+
+ai-chat-ui/node_modules/
+ai-chat-ui/dist/
+ai-chat-ui/.vite/
+ai-chat-ui/coverage/
+ai-chat-ui/.npm/
+ai-chat-ui/.yarn/
+
+########################################
+# Environment Files
+########################################
+
+.env
+.env.*
+.env.local
+.env.*.local
+
+demo-for-llm/application-local.properties
+demo-for-llm/application-dev.properties
+demo-for-llm/application-prod.properties
+demo-for-llm/application-*.properties
+
+!demo-for-llm/application.properties
+!demo-for-llm/application.properties.example
+!demo-for-llm/src/test/resources/application-test.properties
+
+########################################
+# Logs
+########################################
+
+logs/
+*.log
+*.log.*
+
+########################################
+# Databases
+########################################
+
+*.db
+*.sqlite
+*.sqlite3
+*.h2.db
+*.h2.db.*
+
+########################################
+# Security
+########################################
+
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+keystore
+truststore
+
+########################################
+# Documentation
+########################################
+
+docs/_build/
+site/
+
+########################################
+# Build Packages
+########################################
+
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Ignore JARs except Maven build output
+*.jar
+!demo-for-llm/target/*.jar
+
+########################################
+# Cache
+########################################
+
+.cache/
+.tmp/
+temp/
+
+########################################
+# Your project marker files
+########################################
+
+git
+token_routing

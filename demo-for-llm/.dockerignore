@@ -1,0 +1,75 @@
+# Build artifacts
+target/
+.mvn/
+!mvnw
+!mvnw.cmd
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# IDE files
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+
+# Environment and config files
+.env
+.env.local
+.env.*.local
+application-local.properties
+application-*.properties
+
+# Logs
+*.log
+logs/
+
+# Documentation (keep in repo but not in image)
+README.md
+CONTRIBUTING.md
+SETUP.md
+API_EXAMPLES.md
+GITHUB_PUSH_CHECKLIST.md
+LICENSE
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Node modules (if any frontend dependencies)
+node_modules/
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Test outputs
+test-results/
+*.test
+
+# Database files
+*.db
+*.sqlite
+*.h2.db
+
+# Cache
+.cache/
+.npm/
+.yarn/
+
+# Empty marker files
+git
+token_routing

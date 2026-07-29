@@ -1,0 +1,150 @@
+HELP.md
+
+# Build artifacts
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# IDE files
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+*.code-workspace
+
+### Eclipse ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+# Environment Variables & Sensitive Data
+.env
+.env.*
+.env.local
+.env.*.local
+application-local.properties
+**/application-local.properties
+application-dev.properties
+application-prod.properties
+application-*.properties
+!application.properties.example
+!src/test/resources/application-test.properties
+!application.properties
+
+# Logs and debugging
+logs/
+*.log
+*.log.*
+*.trace
+*.out
+
+# Runtime and temporary files
+*.pid
+*.seed
+*.pid.lock
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Testing
+coverage/
+*.lcov
+test-results/
+junit/
+!.gitkeep
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.h2.db
+*.h2.db.*
+
+# Cache and temporary directories
+.cache/
+.npm/
+.yarn/
+.pnp/
+.pnp.js
+node_modules/
+.tmp/
+temp/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+*.swp
+*.swo
+*~
+
+# Security and credentials
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+keystore
+truststore
+
+# Empty marker files (intentionally kept empty)
+git
+token_routing
+
+# Performance monitoring
+*.prof
+*.hprof
+
+# Documentation build
+docs/_build/
+site/
+
+# Package files
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+!target/*.jar  # Allow target jars for Maven build
