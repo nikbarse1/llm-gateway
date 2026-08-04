@@ -21,6 +21,7 @@ public class DynamicRagTopKResolver {
     public int resolveTopK(String instruction, int instructionTokens, boolean hasHeavyContext) {
         ProviderRoutingContext context = ProviderRoutingContext.builder()
                 .requestedProvider(instruction)
+                .instruction(instruction)
                 .instructionTokens(instructionTokens)
                 .finalPromptTokens(instructionTokens)
                 .hasHeavyContext(hasHeavyContext)

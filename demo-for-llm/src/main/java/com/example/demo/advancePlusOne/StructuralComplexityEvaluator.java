@@ -7,7 +7,7 @@ public class StructuralComplexityEvaluator implements ComplexityEvaluator {
 
     @Override
     public double evaluate(ProviderRoutingContext context) {
-        String instruction = context.getRequestedProvider(); // Using raw instruction or incoming text payload references
+        String instruction = context.getInstruction();
         if (instruction == null || instruction.isBlank()) {
             return 0.0;
         }

@@ -18,8 +18,15 @@ export interface ChatTranscript {
 
 // --- COMPLEX RESPONSES FROM POST /api/v2/chat ---
 
+export interface RoutingDecision {
+  requestedProvider: string;
+  executedProvider: string;
+  actionTaken?: string;
+}
+
 export interface UsageMetrics {
-  expectedTokensBeforeOptimization: number;
+  unoptimizedPromptTokens: number;
+  optimizedPromptTokens: number;
   actualPromptTokens: number;
   actualCompletionTokens: number;
   actualTotalTokens: number;
@@ -27,9 +34,43 @@ export interface UsageMetrics {
   savingsPercentage: number;
 }
 
+export interface PayloadSnapshot {
+  contextWindowSize: number;
+  remainingHeadroom: number;
+  finalPrompt?: string;
+}
+
+export interface BudgetActionDetail {
+  section: string;
+  requestedTokens: number;
+  allocatedTokens: number;
+  budgetLimit: number;
+  actionTaken: string;
+}
+
+export interface BudgetAllocation {
+  totalBudget: number;
+  systemReserve: number;
+  historyReserve: number;
+  ragReserve: number;
+  userReserve: number;
+  responseReserve: number;
+  actions: BudgetActionDetail[];
+}
+
+export interface HistoryOptimization {
+  rawHistoryTokens: number;
+  summarizedHistoryTokens: number;
+  historyTokensSaved: number;
+}
+
 export interface OptimizationMetrics {
-  timestamp: string; 
+  timestamp: string;
+  routingDecision?: RoutingDecision;
   usageMetrics: UsageMetrics;
+  payloadSnapshot?: PayloadSnapshot;
+  budgetAllocation?: BudgetAllocation;
+  historyOptimization?: HistoryOptimization;
 }
 
 // This maps directly to AiChatResponse class

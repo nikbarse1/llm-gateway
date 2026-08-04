@@ -28,42 +28,96 @@ public class AiChatController2 {
     private final ChatTitleGeneratorService titleGeneratorService;
 
     @Operation(summary = "Submit a prompt to the optimized AI gateway")
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
     public Mono<AiChatResponse> chat(
             @RequestParam("instruction") String instruction,
             @RequestParam(value = "file", required = false) MultipartFile file,
             @RequestParam(value = "url", required = false) String url,
             @RequestParam(value = "chatId", required = false) String chatId,
-            @RequestParam(value = "provider", defaultValue = "GEMINI") String provider,
+            @RequestParam(value = "provider", defaultValue = "") String provider,
             @RequestParam(value = "contextWindow", defaultValue = "8192") int contextWindow,
             @RequestParam(value = "promptId", required = false) String promptId,
             @RequestHeader(value = "X-Developer-Mode", defaultValue = "false") boolean isDevMode
     ) {
+
+        if (provider == null || provider.isBlank() || "AUTO".equalsIgnoreCase(provider)) {
+            provider = "";
+        }
+
         boolean isNewSession = (chatId == null || chatId.isBlank());
         String activeChatId = isNewSession ? UUID.randomUUID().toString() : chatId;
 
-        // If this is a brand new chat, register it and generate a title in the background
         if (isNewSession && !sessionTracker.sessionExists(activeChatId)) {
             sessionTracker.registerSession(activeChatId, "New Chat");
 
-            // Fire-and-forget background task for title generation
             titleGeneratorService.generateTitle(instruction)
                     .doOnNext(title -> sessionTracker.updateTitle(activeChatId, title))
                     .subscribe();
         }
 
-        log.info("Incoming gateway request - ChatId: {}, Provider: {}, File: {}, URL: {}",
-                activeChatId, provider, (file != null && !file.isEmpty()), (url != null && !url.isBlank()));
-        log.info("Request payload - chatId: {}, instructionLength: {}, instructionPreview: '{}'",
-                activeChatId, instruction.length(), truncate(instruction, 200));
+        // ===================== REQUEST LOG =====================
+        log.info("========== Incoming AI Request ==========");
+
+        log.info("chatId           : {}", activeChatId);
+        log.info("isNewSession     : {}", isNewSession);
+        log.info("provider         : {}", provider);
+        log.info("contextWindow    : {}", contextWindow);
+        log.info("developerMode    : {}", isDevMode);
+        log.info("promptId         : {}", promptId);
+
+        log.info("instructionLength: {}",
+                instruction != null ? instruction.length() : 0);
+
+        log.info("instruction      : {}",
+                truncate(instruction, 500));
+
+        log.info("url              : {}",
+                url);
+
+        if (file != null && !file.isEmpty()) {
+            log.info("filePresent      : true");
+            log.info("fileName         : {}", file.getOriginalFilename());
+            log.info("contentType      : {}", file.getContentType());
+            log.info("fileSize(bytes)  : {}", file.getSize());
+        } else {
+            log.info("filePresent      : false");
+        }
+
+        log.info("=========================================");
 
         return gatewayOrchestrationService.processStatefulChat(
-                instruction, file, url, activeChatId, provider, contextWindow, isDevMode, promptId
+                instruction,
+                file,
+                url,
+                activeChatId,
+                provider,
+                contextWindow,
+                isDevMode,
+                promptId
         ).map(response -> {
+
             response.setChatId(activeChatId);
-            log.info("Response payload - chatId: {}, sourceType: {}, wasOptimized: {}, responseLength: {}",
-                    activeChatId, response.getSourceType(), response.isWasOptimized(),
-                    response.getUserReadableMessage() != null ? response.getUserReadableMessage().length() : 0);
+
+            // ===================== RESPONSE LOG =====================
+            log.info("========== AI Response ==========");
+
+            log.info("chatId           : {}", activeChatId);
+            log.info("sourceType       : {}", response.getSourceType());
+            log.info("wasOptimized     : {}", response.isWasOptimized());
+
+            log.info("responseLength   : {}",
+                    response.getUserReadableMessage() != null
+                            ? response.getUserReadableMessage().length()
+                            : 0);
+
+            log.info("responsePreview  : {}",
+                    truncate(response.getUserReadableMessage(), 500));
+
+            log.info("=================================");
+
             return response;
         });
     }

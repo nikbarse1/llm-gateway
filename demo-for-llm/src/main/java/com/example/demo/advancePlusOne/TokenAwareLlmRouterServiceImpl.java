@@ -25,8 +25,8 @@ public class TokenAwareLlmRouterServiceImpl implements LlmRouterService {
     public String route(ProviderRoutingContext context) {
         String requested = context.getRequestedProvider();
 
-        // 1. Client explicitly requested a non-default tier -> Honor the request unconditionally
-        if (requested != null && !requested.isBlank() && !requested.equalsIgnoreCase(DEFAULT_PROVIDER)) {
+        // 1. Client explicitly requested a provider -> Honor the request unconditionally
+        if (requested != null && !requested.isBlank()) {
             log.debug("Explicit override detected. Routing straight to user target: {}", requested);
             return requested.toUpperCase();
         }

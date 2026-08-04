@@ -7,6 +7,7 @@ import lombok.Value;
 @Builder
 public class ProviderRoutingContext {
     String requestedProvider;
+    String instruction;
     int instructionTokens;
     int finalPromptTokens;
     boolean hasHeavyContext;

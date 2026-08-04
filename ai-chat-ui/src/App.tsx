@@ -4,13 +4,16 @@ import { Sidebar } from './components/layout/Sidebar';
 import { ChatWindow } from './components/chat/ChatWindow';
 import { ChatInput } from './components/chat/ChatInput';
 import { ChatService } from './services/apiService';
-import { type ChatMessage } from './types/api';
+import { type ChatMessage, type OptimizationMetrics } from './types/api';
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentChatId, setCurrentChatId] = useState<string | undefined>();
   const [sidebarRefreshToggle, setSidebarRefreshToggle] = useState(false);
+  const [lastMetrics, setLastMetrics] = useState<OptimizationMetrics | null>(null);
+  const [lastWasOptimized, setLastWasOptimized] = useState(false);
+  const [lastWasDevMode, setLastWasDevMode] = useState(false);
 
   const handleSendMessage = async (
     text: string,
@@ -60,15 +63,21 @@ function App() {
       };
 
       setMessages((prev) => [...prev, aiMessage]);
+      setLastWasDevMode(isDevMode);
+      setLastWasOptimized(response.wasOptimized);
+      setLastMetrics(response.optimizationMetrics);
     } catch (error) {
       console.error('Error communicating with Spring Boot API:', error);
 
+      const errorText = error instanceof Error ? `Error: ${error.message}` : 'Sorry, an error occurred while sending the message.';
       const errorMessage: ChatMessage = {
         role: 'ASSISTANT',
-        content: 'Sorry, an error occurred while sending the message.',
+        content: errorText,
       };
 
       setMessages((prev) => [...prev, errorMessage]);
+      setLastMetrics(null);
+      setLastWasOptimized(false);
     } finally {
       setIsLoading(false);
     }
@@ -84,6 +93,9 @@ function App() {
     setCurrentChatId(chatId);
     setIsLoading(true);
     setMessages([]);
+    setLastMetrics(null);
+    setLastWasOptimized(false);
+    setLastWasDevMode(false);
 
     try {
       const transcript = await ChatService.getTranscript(chatId);
@@ -117,7 +129,13 @@ function App() {
         
         {/* 1. Chat Window Container - Pinned to all 4 corners so it MUST scroll */}
         <div className="absolute inset-0 flex flex-col">
-          <ChatWindow messages={messages} isLoading={isLoading} />
+          <ChatWindow
+            messages={messages}
+            isLoading={isLoading}
+            lastMetrics={lastMetrics}
+            lastWasOptimized={lastWasOptimized}
+            lastWasDevMode={lastWasDevMode}
+          />
         </div>
         
         {/* 2. Floating Input Container - Pinned to the bottom */}

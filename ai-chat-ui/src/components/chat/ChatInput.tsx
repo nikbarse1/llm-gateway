@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Paperclip, Link as LinkIcon, Send, ChevronDown, X, Check } from 'lucide-react';
+import { Paperclip, Link as LinkIcon, Send, X, Check } from 'lucide-react';
 
 // 1. UPDATE INTERFACE: Added 'url: string | null'
 interface ChatInputProps {
@@ -21,7 +21,7 @@ export function ChatInput({ onSendMessage, isLoading }: ChatInputProps) {
 
   // Settings State
   const [isDevMode, setIsDevMode] = useState(false);
-  const [provider, setProvider] = useState('GEMINI');
+  const [provider, setProvider] = useState('AUTO');
   const [contextWindow, setContextWindow] = useState(8192);
 
   // 3. VALIDATION: Can send if we have text, a file, OR a URL
@@ -47,8 +47,8 @@ export function ChatInput({ onSendMessage, isLoading }: ChatInputProps) {
   const handleSubmit = () => {
     if (isSubmitDisabled) return;
     
-    // 5. Pass everything up!
-    onSendMessage(message, selectedFile, selectedUrl, isDevMode, provider, contextWindow);
+    // 5. Pass everything up! AUTO lets the backend pick the provider.
+    onSendMessage(message, selectedFile, selectedUrl, isDevMode, provider === 'AUTO' ? '' : provider, contextWindow);
     
     // Clear all states
     setMessage('');
@@ -168,14 +168,14 @@ export function ChatInput({ onSendMessage, isLoading }: ChatInputProps) {
         <div className="flex items-center gap-4">
            <label className="flex items-center gap-2 cursor-pointer hover:text-zinc-300 transition-colors">
              <input type="checkbox" checked={isDevMode} onChange={(e) => setIsDevMode(e.target.checked)} className="accent-emerald-600 rounded-sm cursor-pointer" />
-             <span>Developer Mode</span>
+             <span>Show Token Metrics</span>
            </label>
            <div className="hidden md:flex items-center gap-1 hover:text-zinc-300 transition-colors">
              <span>Provider:</span>
              <select value={provider} onChange={(e) => setProvider(e.target.value)} className="bg-transparent font-medium text-zinc-400 outline-none cursor-pointer">
+               <option value="AUTO">AUTO</option>
                <option value="GEMINI">GEMINI</option>
-               <option value="OPENAI">OPENAI</option>
-               <option value="ANTHROPIC">ANTHROPIC</option>
+               <option value="FAST_TIER">FAST TIER</option>
              </select>
            </div>
            <div className="hidden md:flex items-center gap-1 hover:text-zinc-300 transition-colors">

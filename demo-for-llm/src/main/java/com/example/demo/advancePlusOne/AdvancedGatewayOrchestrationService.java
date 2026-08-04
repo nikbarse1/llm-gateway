@@ -14,6 +14,7 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Mono;
@@ -56,6 +57,13 @@ public class AdvancedGatewayOrchestrationService {
 
     // Conversation Auto-Summarization
     private final ConversationSummarizationService conversationSummarizationService;
+    private final LLMSummarizationService llmSummarizationService;
+
+    @Value("${history.recent-turns:6}")
+    private int recentTurns;
+
+    @Value("${history.summarization.min-tokens:100}")
+    private int historySummarizationMinTokens;
 
     // Observability
     private final ObservabilityService observabilityService;
@@ -71,13 +79,17 @@ public class AdvancedGatewayOrchestrationService {
         final long[] retrievalStartTime = {0L};
         final long[] retrievalEndTime = {0L};
         final double[] complexityScore = {0.0};
+        final boolean hasPriorTurns = chatMemory.get(chatId) != null && !chatMemory.get(chatId).isEmpty();
+        final boolean hasDocumentContext = (file != null && !file.isEmpty()) || (url != null && !url.isBlank());
 
         Mono<ContextResult> contextMono = resolveDocumentContext(file, url);
-        Mono<List<Double>> embeddingMono = Mono.defer(() -> {
-            embeddingStartTime[0] = System.currentTimeMillis();
-            return embeddingService.generateEmbedding(instruction)
-                    .doOnSuccess(result -> embeddingEndTime[0] = System.currentTimeMillis());
-        });
+        Mono<List<Double>> embeddingMono = (hasPriorTurns || hasDocumentContext)
+                ? Mono.defer(() -> {
+                    embeddingStartTime[0] = System.currentTimeMillis();
+                    return embeddingService.generateEmbedding(instruction)
+                            .doOnSuccess(result -> embeddingEndTime[0] = System.currentTimeMillis());
+                })
+                : Mono.<List<Double>>just(List.of());
 
         return Mono.zip(contextMono, embeddingMono).flatMap(tuple -> {
             ContextResult contextResult = tuple.getT1();
@@ -100,13 +112,13 @@ public class AdvancedGatewayOrchestrationService {
                         retrievalEndTime[0] = 0L;
                         return executeFullLlmPipeline(
                                 instruction, rawContext, contextResult.sourceType(), chatId,
-                                providerName, contextWindow, isDevMode, embedding, promptId,
+                                providerName, contextWindow, isDevMode, embedding, hasPriorTurns, promptId,
                                 startTime, embeddingStartTime[0], embeddingEndTime[0], retrievalStartTime, retrievalEndTime, complexityScore
                         );
                     })
                     .switchIfEmpty(executeFullLlmPipeline(
                             instruction, rawContext, contextResult.sourceType(), chatId,
-                            providerName, contextWindow, isDevMode, embedding, promptId,
+                            providerName, contextWindow, isDevMode, embedding, hasPriorTurns, promptId,
                             startTime, embeddingStartTime[0], embeddingEndTime[0], retrievalStartTime, retrievalEndTime, complexityScore
                     ));
         });
@@ -115,7 +127,7 @@ public class AdvancedGatewayOrchestrationService {
     private Mono<AiChatResponse> executeFullLlmPipeline(
             String instruction, String rawContext, String sourceType, String chatId,
             String providerName, int contextWindow, boolean isDevMode,
-            List<Double> instructionEmbedding, String promptId,
+            List<Double> instructionEmbedding, boolean hasPriorTurns, String promptId,
             long startTime, long embeddingStartTime, long embeddingEndTime,
             long[] retrievalStartTime, long[] retrievalEndTime, double[] complexityScore) {
 
@@ -138,11 +150,14 @@ public class AdvancedGatewayOrchestrationService {
                         : Mono.just(List.of())
         );
 
-        Mono<String> relevantHistoryMono = vectorizedHistoryService.retrieveRelevantHistory(chatId, instruction, 5);
+        Mono<String> relevantHistoryMono = hasPriorTurns
+                ? vectorizedHistoryService.retrieveRelevantHistory(chatId, instruction, 5)
+                : Mono.just("");
 
-        return Mono.zip(ragChunksMono, relevantHistoryMono).flatMap(tuple -> {
+        return Mono.zip(ragChunksMono, relevantHistoryMono, buildOptimizedHistory(chatId)).flatMap(tuple -> {
                 List<String> ragChunks = tuple.getT1();
                 String semanticHistorySnippet = tuple.getT2();
+                HistoryResult historyResult = tuple.getT3();
 
                 // Join RAG chunks into a single context string
                 String ragContextSnippet = ragChunks.stream()
@@ -166,7 +181,8 @@ public class AdvancedGatewayOrchestrationService {
                     // Step 7: Enforce prompt budget (compress if user+RAG exceeds user reserve)
                     return tokenBudgetManager.enforcePromptBudget(augmentedInstruction, budget).flatMap(enforcedPrompt -> {
 
-                        boolean wasOptimized = budget.getActions().stream()
+                        boolean wasHistoryOptimized = historyResult.summarizedHistoryTokens() < historyResult.rawHistoryTokens();
+                        boolean wasOptimized = wasHistoryOptimized || budget.getActions().stream()
                                 .anyMatch(a -> !a.actionTaken().equals("PASS_THROUGH"));
 
                         // Step 8: Construct Structured Spring AI Prompt
@@ -181,11 +197,8 @@ public class AdvancedGatewayOrchestrationService {
                         }
                         messagesToSend.add(new SystemMessage(systemRules));
 
-                        // Add short-term memory turns from Spring AI ChatMemory
-                        List<Message> shortTermMemory = chatMemory.get(chatId);
-                        if (shortTermMemory != null && !shortTermMemory.isEmpty()) {
-                            messagesToSend.addAll(shortTermMemory);
-                        }
+                        // Add summarized history (older turns) plus the last N raw turns
+                        messagesToSend.addAll(historyResult.optimizedHistoryMessages());
 
                         messagesToSend.add(new UserMessage(enforcedPrompt.text()));
 
@@ -194,10 +207,18 @@ public class AdvancedGatewayOrchestrationService {
                                 chatId, compiledPrompt.getInstructions().size(), truncate(compiledPrompt.getInstructions().toString(), 500));
 
                         int heuristicPromptTokens = tokenCounterService.countTokens(compiledPrompt.getInstructions().toString());
-                        int hypotheticalRawTokens = tokenCounterService.countTokens(instruction + "\n" + rawContext + "\n" + semanticHistorySnippet);
+
+                        // Raw baseline: what the prompt would look like without any history/RAG/user optimization
+                        String rawSystemRules = template.getContent()
+                                + (semanticHistorySnippet != null && !semanticHistorySnippet.isBlank()
+                                        ? "\n\n=== RELEVANT CONVERSATION HISTORY ===\n" + semanticHistorySnippet
+                                        : "");
+                        String rawHistoryText = historyResult.rawHistoryText();
+                        String rawUserPrompt = buildAugmentedInstruction(instruction, ragContextSnippet);
 
                         ProviderRoutingContext routingContext = ProviderRoutingContext.builder()
                                 .requestedProvider(providerName)
+                                .instruction(instruction)
                                 .instructionTokens(enforcedPrompt.finalTokens())
                                 .finalPromptTokens(heuristicPromptTokens)
                                 .hasHeavyContext(!rawContext.isBlank())
@@ -229,10 +250,14 @@ public class AdvancedGatewayOrchestrationService {
                                 })
                                 .flatMap(chatResponse -> {
                                     log.info("Received chat response - provider: {}, chatId: {}", executedProvider[0], chatId);
-                                    String aiAnswerText = chatResponse.getResult().getOutput().getText();
-                                    org.springframework.ai.chat.metadata.Usage actualUsage = chatResponse.getMetadata().getUsage();
+                                    String aiAnswerText = (chatResponse.getResult() != null && chatResponse.getResult().getOutput() != null && chatResponse.getResult().getOutput().getText() != null)
+                                            ? chatResponse.getResult().getOutput().getText()
+                                            : "";
+                                    org.springframework.ai.chat.metadata.Usage actualUsage = (chatResponse.getMetadata() != null)
+                                            ? chatResponse.getMetadata().getUsage()
+                                            : null;
                                     log.info("AI answer - chatId: {}, answerLength: {}, usage: {}",
-                                            chatId, aiAnswerText != null ? aiAnswerText.length() : 0, actualUsage);
+                                            chatId, aiAnswerText.length(), actualUsage);
 
                                     // Cache hit saving in background (Context-Aware)
                                     if (instructionEmbedding != null && !instructionEmbedding.isEmpty()) {
@@ -240,27 +265,46 @@ public class AdvancedGatewayOrchestrationService {
                                                 .subscribeOn(Schedulers.boundedElastic()).subscribe();
                                     }
 
-                                    // Step 10: Save turns to both Spring AI ChatMemory and Vectorized History
+                                    // Step 10: Save turns to Spring AI ChatMemory immediately; persist to vector history and summarize in the background
                                     chatMemory.add(chatId, List.of(new UserMessage(instruction), new AssistantMessage(aiAnswerText)));
 
-                                    Mono<Void> saveUserHistory = vectorizedHistoryService.saveMessageToHistory(chatId, "USER", instruction);
-                                    Mono<Void> saveAssistantHistory = vectorizedHistoryService.saveMessageToHistory(chatId, "ASSISTANT", aiAnswerText);
+                                    vectorizedHistoryService.saveMessageToHistory(chatId, "USER", instruction)
+                                            .onErrorResume(e -> { log.warn("Background user history save failed: {}", e.getMessage()); return Mono.<Void>empty(); })
+                                            .subscribe(v -> {}, e -> {});
+                                    vectorizedHistoryService.saveMessageToHistory(chatId, "ASSISTANT", aiAnswerText)
+                                            .onErrorResume(e -> { log.warn("Background assistant history save failed: {}", e.getMessage()); return Mono.<Void>empty(); })
+                                            .subscribe(v -> {}, e -> {});
+                                    conversationSummarizationService.maybeSummarize(chatId)
+                                            .onErrorResume(e -> { log.warn("Background summarization failed: {}", e.getMessage()); return Mono.<Void>empty(); })
+                                            .subscribe(v -> {}, e -> {});
 
-                                    return Mono.when(saveUserHistory, saveAssistantHistory)
-                                            .then(conversationSummarizationService.maybeSummarize(chatId))
-                                            .then(Mono.defer(() -> {
+                                    return Mono.defer(() -> {
+
+                                        int hypotheticalRawTokens = tokenCounterService.countTokens(
+                                                rawSystemRules + "\n" + rawHistoryText + "\n" + rawUserPrompt,
+                                                executedProvider[0]);
+
+                                        OptimizationResponse.HistoryOptimization historyOptimization = OptimizationResponse.HistoryOptimization.builder()
+                                                .rawHistoryTokens(historyResult.rawHistoryTokens())
+                                                .summarizedHistoryTokens(historyResult.summarizedHistoryTokens())
+                                                .historyTokensSaved(Math.max(0, historyResult.rawHistoryTokens() - historyResult.summarizedHistoryTokens()))
+                                                .build();
 
                                         OptimizationResponse mergedMetrics = mergeMetrics(
                                                 contextWindow,
                                                 compiledPrompt.getInstructions().toString(), actualUsage,
                                                 hypotheticalRawTokens, executedProvider[0], providerName,
-                                                budget
+                                                budget, historyOptimization
                                         );
+
+                                        boolean finalWasOptimized = wasOptimized
+                                                || (mergedMetrics.getUsageMetrics() != null && mergedMetrics.getUsageMetrics().getTokensSaved() > 0)
+                                                || (mergedMetrics.getHistoryOptimization() != null && mergedMetrics.getHistoryOptimization().getHistoryTokensSaved() > 0);
 
                                         AiChatResponse response = AiChatResponse.builder()
                                                 .userReadableMessage(aiAnswerText)
                                                 .sourceType(sourceType)
-                                                .wasOptimized(wasOptimized)
+                                                .wasOptimized(finalWasOptimized)
                                                 .optimizationMetrics(isDevMode ? mergedMetrics : null)
                                                 .chatId(chatId)
                                                 .build();
@@ -278,9 +322,11 @@ public class AdvancedGatewayOrchestrationService {
                                             compressionPercent = mergedMetrics.getUsageMetrics().getSavingsPercentage();
                                         }
                                         
+                                        long promptTokenCount = actualUsage != null ? actualUsage.getPromptTokens() : 0L;
+                                        long completionTokenCount = actualUsage != null ? actualUsage.getCompletionTokens() : 0L;
                                         double estimatedCost = calculateEstimatedCost(
-                                            actualUsage.getPromptTokens(),
-                                            actualUsage.getCompletionTokens(),
+                                            promptTokenCount,
+                                            completionTokenCount,
                                             executedProvider[0]
                                         );
                                         
@@ -288,8 +334,8 @@ public class AdvancedGatewayOrchestrationService {
                                             chatId,
                                             executedProvider[0],
                                             totalLatency,
-                                            actualUsage.getPromptTokens(),
-                                            actualUsage.getCompletionTokens(),
+                                            promptTokenCount,
+                                            completionTokenCount,
                                             false,
                                             embeddingMs,
                                             retrievalMs,
@@ -300,7 +346,7 @@ public class AdvancedGatewayOrchestrationService {
                                         );
                                         
                                         return Mono.just(response);
-                                    }));
+                                    });
                                 });
                     });
                 });
@@ -348,14 +394,14 @@ public class AdvancedGatewayOrchestrationService {
             int contextWindow,
             String finalPromptContent, org.springframework.ai.chat.metadata.Usage actualUsage,
             int hypotheticalRawTokens, String actualProvider, String requestedProvider,
-            TokenBudget budget) {
+            TokenBudget budget, OptimizationResponse.HistoryOptimization historyOptimization) {
 
         long promptTokens = actualUsage != null ? actualUsage.getPromptTokens() : 0L;
         long completionTokens = actualUsage != null ? actualUsage.getCompletionTokens() : 0L;
         long totalTokens = actualUsage != null ? actualUsage.getTotalTokens() : 0L;
 
-        long tokensSaved = Math.max(0, hypotheticalRawTokens - totalTokens);
-        double savingsPercent = hypotheticalRawTokens > 0 ? ((double) tokensSaved / hypotheticalRawTokens) * 100 : 0.0;
+        long tokensSaved = promptTokens > 0 ? Math.max(0, hypotheticalRawTokens - promptTokens) : 0L;
+        double savingsPercent = promptTokens > 0 && hypotheticalRawTokens > 0 ? ((double) tokensSaved / hypotheticalRawTokens) * 100 : 0.0;
 
         return OptimizationResponse.builder()
                 .routingDecision(OptimizationResponse.RoutingDecision.builder()
@@ -363,7 +409,8 @@ public class AdvancedGatewayOrchestrationService {
                         .executedProvider(actualProvider)
                         .build())
                 .usageMetrics(OptimizationResponse.UsageMetrics.builder()
-                        .expectedTokensBeforeOptimization(hypotheticalRawTokens)
+                        .unoptimizedPromptTokens(hypotheticalRawTokens)
+                        .optimizedPromptTokens(promptTokens)
                         .actualPromptTokens(promptTokens)
                         .actualCompletionTokens(completionTokens)
                         .actualTotalTokens(totalTokens)
@@ -376,6 +423,7 @@ public class AdvancedGatewayOrchestrationService {
                         .finalPrompt(finalPromptContent)
                         .build())
                 .budgetAllocation(buildBudgetAllocation(budget))
+                .historyOptimization(historyOptimization)
                 .build();
     }
 
@@ -415,6 +463,65 @@ public class AdvancedGatewayOrchestrationService {
                     .map(result -> new ContextResult(result.content(), "URL"));
         }
         return Mono.just(new ContextResult("", "TEXT_ONLY"));
+    }
+
+    private record HistoryResult(
+            String rawHistoryText,
+            List<Message> optimizedHistoryMessages,
+            int rawHistoryTokens,
+            int summarizedHistoryTokens
+    ) {}
+
+    private Mono<HistoryResult> buildOptimizedHistory(String chatId) {
+        List<Message> shortTermMemory = chatMemory.get(chatId);
+        if (shortTermMemory == null || shortTermMemory.isEmpty()) {
+            return Mono.just(new HistoryResult("", List.of(), 0, 0));
+        }
+
+        String rawHistoryText = shortTermMemory.stream()
+                .map(Message::getText)
+                .collect(Collectors.joining("\n"));
+        int rawHistoryTokens = tokenCounterService.countTokens(rawHistoryText);
+
+        int recentMessageCount = recentTurns * 2;
+        if (shortTermMemory.size() <= recentMessageCount) {
+            String summarizedText = shortTermMemory.stream()
+                    .map(Message::getText)
+                    .collect(Collectors.joining("\n"));
+            int summarizedTokens = tokenCounterService.countTokens(summarizedText);
+            return Mono.just(new HistoryResult(rawHistoryText, new ArrayList<>(shortTermMemory), rawHistoryTokens, summarizedTokens));
+        }
+
+        List<Message> older = shortTermMemory.subList(0, shortTermMemory.size() - recentMessageCount);
+        List<Message> recent = new ArrayList<>(shortTermMemory.subList(shortTermMemory.size() - recentMessageCount, shortTermMemory.size()));
+
+        String olderText = older.stream()
+                .filter(m -> m.getText() != null && !m.getText().contains("```"))
+                .map(Message::getText)
+                .collect(Collectors.joining("\n"));
+        int olderTokens = tokenCounterService.countTokens(olderText);
+
+        if (olderTokens < historySummarizationMinTokens || olderText.isBlank()) {
+            return Mono.just(new HistoryResult(rawHistoryText, new ArrayList<>(shortTermMemory), rawHistoryTokens, rawHistoryTokens));
+        }
+
+        return llmSummarizationService.smartCompress(olderText, OptimizationRequest.TargetType.HISTORY)
+                .map(summary -> {
+                    String summarizedHistory = "Earlier conversation summary:\n" + summary;
+                    List<Message> optimized = new ArrayList<>();
+                    optimized.add(new SystemMessage(summarizedHistory));
+                    optimized.addAll(recent);
+
+                    String summarizedHistoryText = optimized.stream()
+                            .map(Message::getText)
+                            .collect(Collectors.joining("\n"));
+                    int summarizedHistoryTokens = tokenCounterService.countTokens(summarizedHistoryText);
+                    return new HistoryResult(rawHistoryText, optimized, rawHistoryTokens, summarizedHistoryTokens);
+                })
+                .onErrorResume(e -> {
+                    log.warn("History summarization failed, falling back to full history: {}", e.getMessage());
+                    return Mono.just(new HistoryResult(rawHistoryText, new ArrayList<>(shortTermMemory), rawHistoryTokens, rawHistoryTokens));
+                });
     }
 
     private String buildAugmentedInstruction(String instruction, String ragSnippet) {

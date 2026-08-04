@@ -26,7 +26,7 @@ public class IntentKeywordEvaluator implements ComplexityEvaluator {
 
     @Override
     public double evaluate(ProviderRoutingContext context) {
-        String input = context.getRequestedProvider();
+        String input = context.getInstruction();
         if (input == null || input.isBlank()) {
             return 0.0;
         }

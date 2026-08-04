@@ -1,14 +1,18 @@
 import { useEffect, useRef } from 'react';
-import { type ChatMessage } from '../../types/api';
+import { type ChatMessage, type OptimizationMetrics } from '../../types/api';
 import { MessageBubble } from './MessageBubble';
+import { MetricsPanel } from './MetricsPanel';
 import { Bot } from 'lucide-react';
 
 interface ChatWindowProps {
   messages: ChatMessage[];
   isLoading: boolean;
+  lastMetrics: OptimizationMetrics | null;
+  lastWasOptimized: boolean;
+  lastWasDevMode: boolean;
 }
 
-export function ChatWindow({ messages, isLoading }: ChatWindowProps) {
+export function ChatWindow({ messages, isLoading, lastMetrics, lastWasOptimized, lastWasDevMode }: ChatWindowProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -51,7 +55,13 @@ export function ChatWindow({ messages, isLoading }: ChatWindowProps) {
           </div>
         </div>
       )}
-      
+
+      <MetricsPanel
+        metrics={lastMetrics}
+        wasOptimized={lastWasOptimized}
+        isVisible={lastWasDevMode}
+      />
+
       {/* THE FIX: Added flex-shrink-0 and increased height to push past the input box */}
       <div ref={messagesEndRef} className="h-48 w-full flex-shrink-0" />
     </div>

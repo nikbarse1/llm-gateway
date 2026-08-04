@@ -24,6 +24,7 @@ public class OptimizationResponse {
     private CompressionInternals compressionInternals;
     private PayloadSnapshot payloadSnapshot;
     private BudgetAllocation budgetAllocation;
+    private HistoryOptimization historyOptimization;
 
     // --- NESTED DTO CLASSES ---
 
@@ -43,10 +44,11 @@ public class OptimizationResponse {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class UsageMetrics {
-        private Integer expectedTokensBeforeOptimization; // What jtokkit estimated
-        private Long actualPromptTokens;                  // True metric from API
-        private Long actualCompletionTokens;              // True metric from API
-        private Long actualTotalTokens;                   // True metric from API
+        private Integer unoptimizedPromptTokens;  // Raw full-prompt baseline (provider-aligned)
+        private Long optimizedPromptTokens;       // Actual prompt tokens after optimization
+        private Long actualPromptTokens;          // True metric from API
+        private Long actualCompletionTokens;      // True metric from API
+        private Long actualTotalTokens;           // True metric from API
         private Long tokensSaved;
         private Double savingsPercentage;
     }
@@ -84,6 +86,16 @@ public class OptimizationResponse {
         private Integer userReserve;
         private Integer responseReserve;
         private List<BudgetActionDetail> actions;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class HistoryOptimization {
+        private Integer rawHistoryTokens;
+        private Integer summarizedHistoryTokens;
+        private Integer historyTokensSaved;
     }
 
     @Data
